@@ -1,0 +1,138 @@
+---
+title: "Practical Machine Learning Project: Weight Lifting Exercise"
+
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the manner in which they did the exercise.
+
+## Dataset
+For this project, we use the [Weight Lifting Exercises Dataset](http://groupware.les.inf.puc-rio.br/har)
+
+```{r}
+wl.data <- read.csv("pml-training.csv", na.strings = c("","NA"))
+dim(wl.data)
+```
+
+
+## Data Cleaning
+
+There are some variables with many missing values. We will identify the corresponding columns and eliminate them.
+
+```{r NAs}
+
+    ## Identify if variable contains NAs
+    var.na <- apply(wl.data,2, function (x){
+        any(is.na(x))
+    })
+```
+From the 160 variables, 100 contain NAs. These variables refer to derived features of max, min, average, kurtosis, and skewness.
+```{r}
+    sum(var.na)
+```
+```{r}
+    names(var.na[var.na == T])[1:8]
+```
+
+We subset only variables with complete cases.
+```{r}
+    wl.data <- wl.data[,var.na == F]
+    dim(wl.data)
+```
+
+
+
+## Data Split
+We split the data into training and testing sets.The training set will be used to build our model. Then, we evaluate the accuracy of our model predictions on the independent test set. 
+
+```{r, message=FALSE, warning=FALSE}
+    library(caret)
+```
+
+```{r}
+    ## Random subsampling
+    inTrain <- createDataPartition(y = wl.data$classe,
+                                   p = 0.75, list = F)
+    training <- wl.data[inTrain,]   
+    testing <- wl.data[-inTrain,]
+    dim(training); dim(testing)
+```
+We can further subset to exclude variables not useful for prediction.
+```{r}
+    training <- training[,-c(1:7)] 
+    testing <- testing[,-c(1:7)]
+    dim(training); dim(testing)
+```
+
+## Exploratory Analysis
+
+We can take a look at the classification of exercises, the outcome we want to predict.
+```{r}
+    table(training$classe)
+```
+We can also look at some plots to see the distribution of certain features among the five classes. 
+```{r}
+    boxplot(roll_belt~ classe, data = training, varwidth=TRUE,
+            xlab = "Class", ylab = "roll belt")
+```
+```{r}
+    boxplot(roll_arm~ classe, data = training, varwidth=TRUE,
+            xlab = "Class", ylab = "roll arm")
+```
+```{r}
+   boxplot(roll_forearm~ classe, data = training, varwidth=TRUE,
+            xlab = "Class", ylab = "roll forearm")
+```
+
+
+## Model Building: Random Forest
+In order to predict the class of exercise, a random forest model is fitted to the training data. Random forest is chosen due to its high accuracy and because it is one of the top performing algorithms for prediction. To reduce the risk of overfitting, common in random forest models, is important to do cross-validation. Therefore, a five fold cross validation is implemented.
+
+
+```{r rf model}
+    ## Cross-validation: 5-fold
+    cv <- trainControl(method = "repeatedcv",
+                               number = 5)
+    ## Fitting Model
+    rfMod <- train(classe ~ ., data = training, # data
+                               method = "rf",   # Random Forest 
+                               trControl = cv,  # Cross-validation
+                               ntree = 100)     # num. of trees
+    rfMod$finalModel
+```
+
+## Predictions
+We can then calculate the predicted values from our model and take a look at the classification table of predicted vs real values.
+```{r predictions}
+    ## Get predictions on test set
+    rf.predict <- predict(rfMod,testing)
+    
+    summary(rf.predict)
+```
+```{r}
+    ## Classification table
+    table(rf.predict,testing$classe)
+```
+## Out-of-sample error and Accuracy
+Errors are taken from the off diagonal elements in the classification table. These sum to 41.
+```{r}
+    errors <- sum(rf.predict != testing$classe)
+    errors
+```
+The expected out of sample error rate is approx. 0.84 %
+```{r}
+    errors/length(rf.predict)
+```
+The model accuracy is 99.16%
+
+```{r}
+    ## Confusion matrix
+    confusionMatrix(testing$classe, rf.predict)
+```
+
+
+
